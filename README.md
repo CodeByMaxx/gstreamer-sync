@@ -4,8 +4,6 @@ A small C++ project demonstrating how to draw dynamic bounding boxes on a video 
 
 Bounding boxes are generated independently from the video pipeline and matched to the current video frame using the closest presentation timestamp (PTS).
 
-Images:
-![Result1](Picutre2.png)
 
 ---
 
