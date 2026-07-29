@@ -7,7 +7,7 @@ pipeline through `appsrc`. Detection results are generated in a separate
 thread and synchronized with video frames using timestamps. Bounding boxes are
 drawn using `cairooverlay`.
 
-![Result](Picutre1.png)
+![Result](Picture1.png)
 
 ## Pipeline
 
