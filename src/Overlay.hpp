@@ -84,13 +84,21 @@ class Overlay {
     }
   }
 
+  //
+  // Unit-Test API
+  //
+  std::optional<Detection> getDetectionsWithLowestTimeDifference(
+      GstClockTime timestamp, int offsetMs)
+  {
+    std::lock_guard<std::mutex> lock(mutex);
+
+    return findDetection(timestamp, offsetMs);
+  }
+
   private:
   static void drawCallback(GstElement*, cairo_t* cr, guint64 timestamp, guint64,
                            gpointer userData)
   {
-    std::cout << "DRAW timestamp: " << timestamp / GST_MSECOND << " ms"
-              << std::endl;
-
     auto self = static_cast<Overlay*>(userData);
 
     self->draw(cr, timestamp);
@@ -101,13 +109,7 @@ class Overlay {
     std::cout << "DRAW timestamp: " << timestamp / GST_MSECOND << " ms"
               << std::endl;
 
-    std::optional<Detection> detection;
-
-    {
-      std::lock_guard<std::mutex> lock(mutex);
-
-      detection = findDetection(timestamp, 200);
-    }
+    auto detection = getDetectionsWithLowestTimeDifference(timestamp, 200);
 
     if (detection) {
       std::cout << "BOX FOUND" << std::endl;
@@ -119,9 +121,6 @@ class Overlay {
       return;
     }
 
-    //
-    // rote Bounding Box
-    //
     cairo_set_source_rgb(cr, 1.0, 0.0, 0.0);
 
     cairo_set_line_width(cr, 3.0);
@@ -149,6 +148,7 @@ class Overlay {
 
       if (!GST_CLOCK_TIME_IS_VALID(best) || diff < best) {
         best = diff;
+
         result = detection;
       }
     }

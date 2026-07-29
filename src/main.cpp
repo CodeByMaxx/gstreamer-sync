@@ -25,16 +25,11 @@ int main(int argc, char* argv[])
 
   bool run = true;
 
-  //
-  // gemeinsame Zeitbasis Kamera -> Detection
-  //
   std::mutex timestampMutex;
 
   GstClockTime cameraTimestamp = 0;
 
-  //
-  // Dummy Kamera Thread
-  //
+  // erster Thread
   std::thread cameraThread([&]() {
     camera.start([&](const auto& frame, GstClockTime pts) {
       {
@@ -50,9 +45,7 @@ int main(int argc, char* argv[])
     });
   });
 
-  //
-  // Dummy Detection Thread
-  //
+  // zweiter Thread
   std::thread detectionThread([&]() {
     std::mt19937 generator(std::random_device{}());
 
@@ -69,18 +62,12 @@ int main(int argc, char* argv[])
         pts = cameraTimestamp;
       }
 
-      //
-      // warten bis Kamera erstes Bild geliefert hat
-      //
       if (pts == 0) {
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
 
         continue;
       }
 
-      //
-      // simulierte AI Berechnung
-      //
       int processingDelay = delay(generator);
 
       GstClockTime detectionTimestamp = pts + processingDelay * GST_MSECOND;
@@ -103,9 +90,6 @@ int main(int argc, char* argv[])
 
   g_main_loop_run(loop);
 
-  //
-  // Shutdown
-  //
   run = false;
 
   camera.stop();

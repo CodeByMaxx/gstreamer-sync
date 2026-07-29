@@ -72,9 +72,7 @@ public:
 
     setupAppSrc();
 
-
-
-    //
+    // TODO dynamic
     // insert overlay before sink
     //
     gstElements.insert(gstElements.end() - 2, overlay.getElement());
@@ -255,99 +253,9 @@ public:
         << std::endl;
   }
 
-  /*void pushFrame(
-      const std::vector<uint8_t>& data,
-      GstClockTime pts)
-  {
-
-    if (!appsrc)
-    {
-      throw std::runtime_error(
-          "No appsrc available");
-    }
-
-
-
-    std::cout
-        << "Frame size: "
-        << data.size()
-        << std::endl;
-
-
-
-    GstBuffer* buffer =
-        gst_buffer_new_allocate(
-            nullptr,
-            data.size(),
-            nullptr);
-
-
-
-    if (!buffer)
-    {
-      throw std::runtime_error(
-          "Could not allocate buffer");
-    }
-
-
-
-    GstMapInfo map;
-
-
-
-    if (gst_buffer_map(
-            buffer,
-            &map,
-            GST_MAP_WRITE))
-    {
-
-      memcpy(
-          map.data,
-          data.data(),
-          data.size());
-
-
-      gst_buffer_unmap(
-          buffer,
-          &map);
-    }
-
-
-
-
-    GST_BUFFER_PTS(buffer) =
-        pts;
-
-
-    GST_BUFFER_DTS(buffer) =
-        pts;
-
-
-
-    GST_BUFFER_DURATION(buffer) =
-        GST_SECOND / 30;
-
-
-
-
-    GstFlowReturn ret =
-        gst_app_src_push_buffer(
-            GST_APP_SRC(appsrc),
-            buffer);
-
-
-
-    if (ret != GST_FLOW_OK)
-    {
-      std::cerr
-          << "push buffer failed: "
-          << ret
-          << std::endl;
-    }
-  }
-  */
   void pushFrame(const std::vector<uint8_t>& data, GstClockTime pts)
   {
+    //TODO: Improve malloc -> only one malloc at start
     if (!appsrc) {
       throw std::runtime_error("No appsrc available");
     }
