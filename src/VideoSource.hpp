@@ -255,10 +255,7 @@ public:
         << std::endl;
   }
 
-
-
-
-  void pushFrame(
+  /*void pushFrame(
       const std::vector<uint8_t>& data,
       GstClockTime pts)
   {
@@ -348,8 +345,54 @@ public:
           << std::endl;
     }
   }
+  */
+  void pushFrame(const std::vector<uint8_t>& data, GstClockTime pts)
+  {
+    if (!appsrc) {
+      throw std::runtime_error("No appsrc available");
+    }
 
+    std::cout << "Frame size: " << data.size() << std::endl;
 
+    GstBuffer* buffer = gst_buffer_new_allocate(nullptr, data.size(), nullptr);
+
+    if (!buffer) {
+      throw std::runtime_error("Could not allocate buffer");
+    }
+
+    GstMapInfo map;
+
+    if (!gst_buffer_map(buffer, &map, GST_MAP_WRITE)) {
+      gst_buffer_unref(buffer);
+
+      throw std::runtime_error("Could not map buffer");
+    }
+
+    memcpy(map.data, data.data(), data.size());
+
+    gst_buffer_unmap(buffer, &map);
+
+    /*
+     * Timestamp von DummyCamera übernehmen
+     */
+    GST_BUFFER_PTS(buffer) = pts;
+
+    GST_BUFFER_DTS(buffer) = pts;
+
+    GST_BUFFER_DURATION(buffer) = GST_SECOND / 30;
+
+    std::cout << "Push buffer PTS: " << GST_TIME_AS_MSECONDS(pts) << " ms"
+              << std::endl;
+
+    GstFlowReturn ret = gst_app_src_push_buffer(GST_APP_SRC(appsrc), buffer);
+
+    std::cout << "push result: " << gst_flow_get_name(ret) << std::endl;
+
+    if (ret != GST_FLOW_OK) {
+      std::cerr << "push buffer failed: " << gst_flow_get_name(ret)
+                << std::endl;
+    }
+  }
 
 private:
 

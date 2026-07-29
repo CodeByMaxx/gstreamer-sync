@@ -19,17 +19,14 @@ class DummyCamera {
   template <typename Callback>
   void start(Callback callback)
   {
+    GstClockTime pts = 0;
+
     while (running) {
       auto frame = generateFrame();
 
-      auto now = std::chrono::steady_clock::now().time_since_epoch();
-
-      GstClockTime pts =
-          std::chrono::duration_cast<std::chrono::nanoseconds>(now).count();
-
-      std::cout << "Kamera timestamp: " << pts << std::endl;
-
       callback(frame, pts);
+
+      pts += GST_SECOND / fps;
 
       std::this_thread::sleep_for(std::chrono::milliseconds(1000 / fps));
     }

@@ -1,7 +1,9 @@
 #include <gst/gst.h>
 
 #include <chrono>
-#include <cstdlib>
+#include <iostream>
+#include <mutex>
+#include <random>
 #include <thread>
 
 #include "DummyCamera.hpp"
@@ -24,10 +26,26 @@ int main(int argc, char* argv[])
   bool run = true;
 
   //
+  // gemeinsame Zeitbasis Kamera -> Detection
+  //
+  std::mutex timestampMutex;
+
+  GstClockTime cameraTimestamp = 0;
+
+  //
   // Dummy Kamera Thread
   //
   std::thread cameraThread([&]() {
     camera.start([&](const auto& frame, GstClockTime pts) {
+      {
+        std::lock_guard<std::mutex> lock(timestampMutex);
+
+        cameraTimestamp = pts;
+      }
+
+      std::cout << "Kamera timestamp: " << pts / GST_MSECOND << " ms"
+                << std::endl;
+
       source.pushFrame(frame, pts);
     });
   });
@@ -35,31 +53,49 @@ int main(int argc, char* argv[])
   //
   // Dummy Detection Thread
   //
-  auto randomnumber = [](int range) -> int {
-    return -range + (rand() % range);
-  };
-
   std::thread detectionThread([&]() {
+    std::mt19937 generator(std::random_device{}());
+
+    std::uniform_int_distribution<int> delay(20, 80);
+
+    std::uniform_int_distribution<int> position(-25, 25);
 
     while (run) {
-      std::vector<Detection> list;
+      GstClockTime pts = 0;
 
-      auto now = std::chrono::steady_clock::now().time_since_epoch();
+      {
+        std::lock_guard<std::mutex> lock(timestampMutex);
 
-      GstClockTime pts =
-          std::chrono::duration_cast<std::chrono::nanoseconds>(now).count();
-
-      for (int i = 0; i < 10; i++) {
-        list.push_back({(pts + randomnumber(15)),
-                        {{50 + randomnumber(25), 50 + randomnumber(25),
-                          100 + randomnumber(50), 100 + randomnumber(50)}}});
+        pts = cameraTimestamp;
       }
 
-      overlay.setDetections(std::move(list));
+      //
+      // warten bis Kamera erstes Bild geliefert hat
+      //
+      if (pts == 0) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
 
-      std::cout << "Detection timestamp: " << pts << " ms" << std::endl;
+        continue;
+      }
 
-      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+      //
+      // simulierte AI Berechnung
+      //
+      int processingDelay = delay(generator);
+
+      GstClockTime detectionTimestamp = pts + processingDelay * GST_MSECOND;
+
+      BoundingBox box{50 + position(generator), 50 + position(generator), 100,
+                      100};
+
+      Detection detection{detectionTimestamp, {box}};
+
+      overlay.setDetections(std::vector<Detection>{detection});
+
+      std::cout << "Detection timestamp: " << detectionTimestamp / GST_MSECOND
+                << " ms" << std::endl;
+
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
   });
 

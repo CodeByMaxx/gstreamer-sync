@@ -12,17 +12,11 @@
 #include <utility>
 #include <vector>
 
-class PositionGenerator {};
-
 struct BoundingBox {
   int x;
   int y;
   int width;
   int height;
-};
-
-struct FrameInfo {
-  GstClockTime pts = GST_CLOCK_TIME_NONE;
 };
 
 struct Detection {
@@ -32,10 +26,6 @@ struct Detection {
 
 template <class T>
 class FixedDeque {
-  private:
-  std::deque<T> dq;
-  size_t maxSize;
-
   public:
   explicit FixedDeque(size_t size) : maxSize(size) {}
 
@@ -47,10 +37,6 @@ class FixedDeque {
 
   auto end() const { return dq.end(); }
 
-  T& at(size_t index) { return dq.at(index); }
-
-  const T& at(size_t index) const { return dq.at(index); }
-
   void push_back(T&& value)
   {
     if (dq.size() >= maxSize) {
@@ -60,14 +46,17 @@ class FixedDeque {
     dq.push_back(std::move(value));
   }
 
-  void clear() { dq.clear(); }
-
   size_t size() const { return dq.size(); }
+
+  private:
+  std::deque<T> dq;
+
+  size_t maxSize;
 };
 
 class Overlay {
   public:
-  explicit Overlay(int size = 20) : detections(size)
+  explicit Overlay(int size = 50) : detections(size)
   {
     element = gst_element_factory_make("cairooverlay", "box-overlay");
 
@@ -83,125 +72,88 @@ class Overlay {
 
   GstElement* getElement() const { return element; }
 
-  void setDetections(std::vector<Detection>&& detection_)
+  void setDetections(std::vector<Detection>&& list)
   {
     std::lock_guard<std::mutex> lock(mutex);
 
-    for (auto& detection : detection_) {
+    for (auto& detection : list) {
+      std::cout << "Overlay received detection: " << detection.pts / GST_MSECOND
+                << " ms" << std::endl;
+
       detections.push_back(std::move(detection));
     }
-
-    // std::cout << "detections: " << detections.size() << std::endl;
-  }
-
-  void orderDetections()
-  {
-    std::lock_guard<std::mutex> lock(mutex);
-
-    std::sort(detections.begin(), detections.end(),
-              [](const Detection& left, const Detection& right) {
-                return left.pts < right.pts;
-              });
-  }
-
-  std::optional<Detection> getDetectionsWithLowestTimeDifference(
-      GstClockTime time, int offset)
-  {
-    std::lock_guard<std::mutex> lock(mutex);
-
-    std::optional<Detection> result;
-
-    GstClockTime smallestDiff = GST_CLOCK_TIME_NONE;
-
-    for (const auto& detection : detections) {
-      if (!GST_CLOCK_TIME_IS_VALID(time) ||
-          !GST_CLOCK_TIME_IS_VALID(detection.pts)) {
-        continue;
-      }
-
-      GstClockTime diff =
-          (time > detection.pts) ? time - detection.pts : detection.pts - time;
-
-      if (!GST_CLOCK_TIME_IS_VALID(smallestDiff) || diff < smallestDiff) {
-        smallestDiff = diff;
-        result = detection;
-      }
-    }
-
-    if (result && smallestDiff < offset * GST_MSECOND) {
-      return result;
-    }
-
-    return std::nullopt;
-  }
-
-  void setTimestamp(GstClockTime pts)
-  {
-    std::lock_guard<std::mutex> lock(mutex);
-
-    frameInfo.pts = pts;
   }
 
   private:
-  static void drawCallback(GstElement* overlay, cairo_t* cr, guint64 timestamp,
-                           guint64 duration, gpointer user_data)
+  static void drawCallback(GstElement*, cairo_t* cr, guint64 timestamp, guint64,
+                           gpointer userData)
   {
-    auto self = static_cast<Overlay*>(user_data);
+    std::cout << "DRAW timestamp: " << timestamp / GST_MSECOND << " ms"
+              << std::endl;
+
+    auto self = static_cast<Overlay*>(userData);
 
     self->draw(cr, timestamp);
   }
 
-  void draw(cairo_t* cr, guint64 timestamp)
+  void draw(cairo_t* cr, GstClockTime timestamp)
   {
+    std::cout << "DRAW timestamp: " << timestamp / GST_MSECOND << " ms"
+              << std::endl;
+
     std::optional<Detection> detection;
 
     {
       std::lock_guard<std::mutex> lock(mutex);
 
-      detection = getDetectionUnsafe(timestamp, 1000);
+      detection = findDetection(timestamp, 200);
     }
 
     if (detection) {
-      std::cout << "Update detection" << std::endl;
-      olddetection = detection;
+      std::cout << "BOX FOUND" << std::endl;
+
+      lastDetection = detection;
     }
 
-    if (!olddetection) {
+    if (!lastDetection) {
       return;
     }
 
-    for (const auto& box : olddetection->boxes) {
-      cairo_rectangle(cr, box.x, box.y, box.width, box.height);
+    //
+    // rote Bounding Box
+    //
+    cairo_set_source_rgb(cr, 1.0, 0.0, 0.0);
 
-      cairo_set_line_width(cr, 3.0);
+    cairo_set_line_width(cr, 3.0);
+
+    for (const auto& box : lastDetection->boxes) {
+      cairo_rectangle(cr, box.x, box.y, box.width, box.height);
 
       cairo_stroke(cr);
     }
   }
 
-  // Wird nur mit gehaltenem Mutex aufgerufen
-  std::optional<Detection> getDetectionUnsafe(GstClockTime time, int offset)
+  std::optional<Detection> findDetection(GstClockTime timestamp, int offsetMs)
   {
     std::optional<Detection> result;
 
-    GstClockTime smallestDiff = GST_CLOCK_TIME_NONE;
+    GstClockTime best = GST_CLOCK_TIME_NONE;
 
     for (const auto& detection : detections) {
-      if (!GST_CLOCK_TIME_IS_VALID(time) ||
-          !GST_CLOCK_TIME_IS_VALID(detection.pts)) {
+      if (!GST_CLOCK_TIME_IS_VALID(detection.pts)) {
         continue;
       }
 
-      GstClockTime diff =
-          (time > detection.pts) ? time - detection.pts : detection.pts - time;
+      GstClockTime diff = timestamp > detection.pts ? timestamp - detection.pts
+                                                    : detection.pts - timestamp;
 
-      if (!GST_CLOCK_TIME_IS_VALID(smallestDiff) || diff < smallestDiff) {
-        smallestDiff = diff;
+      if (!GST_CLOCK_TIME_IS_VALID(best) || diff < best) {
+        best = diff;
         result = detection;
       }
     }
 
-    if (result && smallestDiff < offset * GST_MSECOND) {
+    if (result && best < offsetMs * GST_MSECOND) {
       return result;
     }
 
@@ -215,7 +167,5 @@ class Overlay {
 
   std::mutex mutex;
 
-  FrameInfo frameInfo;
-
-  std::optional<Detection> olddetection;
+  std::optional<Detection> lastDetection;
 };
