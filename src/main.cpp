@@ -1,5 +1,10 @@
 #include <gst/gst.h>
 
+#include <chrono>
+#include <cstdlib>
+#include <thread>
+
+#include "DummyCamera.hpp"
 #include "VideoSource.hpp"
 
 int main(int argc, char* argv[])
@@ -7,46 +12,53 @@ int main(int argc, char* argv[])
   gst_init(&argc, &argv);
 
   Overlay overlay;
-  srand((unsigned)time(NULL));
 
-  VideoSource source({{"videotestsrc", "source"},
+  VideoSource source({{"appsrc", "camera-source"},
                       {"videoconvert", "convert1"},
                       {"videoconvert", "convert2"},
                       {"autovideosink", "sink"}},
                      overlay);
 
-  // Test-Rechteck
+  DummyCamera camera(640, 480, 30);
+
+  bool run = true;
+
+  //
+  // Dummy Kamera Thread
+  //
+  std::thread cameraThread([&]() {
+    camera.start([&](const auto& frame, GstClockTime pts) {
+      source.pushFrame(frame, pts);
+    });
+  });
+
+  //
+  // Dummy Detection Thread
+  //
   auto randomnumber = [](int range) -> int {
     return -range + (rand() % range);
   };
 
-  /*
-  bool run = true;
-  std::thread t1([&]() {
-    while (run) {
-      overlay.setDetections(
-          {7600 * GST_MSECOND,
-           {{50 + randomnumber(25), 50 + randomnumber(25),
-             100 + randomnumber(50), 100 + randomnumber(50)}}});
-    }
-  });
-  */
-
-  bool run = true;
-  std::thread t1([&]() {
-    uint64_t timestamp = 0;
+  std::thread detectionThread([&]() {
 
     while (run) {
       std::vector<Detection> list;
-      timestamp += 10;
+
+      auto now = std::chrono::steady_clock::now().time_since_epoch();
+
+      GstClockTime pts =
+          std::chrono::duration_cast<std::chrono::nanoseconds>(now).count();
+
       for (int i = 0; i < 10; i++) {
-        list.push_back({(timestamp + randomnumber(15)) * GST_MSECOND,
+        list.push_back({(pts + randomnumber(15)),
                         {{50 + randomnumber(25), 50 + randomnumber(25),
                           100 + randomnumber(50), 100 + randomnumber(50)}}});
       }
 
       overlay.setDetections(std::move(list));
-      std::cout << "After:" << timestamp << std::endl;
+
+      std::cout << "Detection timestamp: " << pts << " ms" << std::endl;
+
       std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
   });
@@ -55,9 +67,18 @@ int main(int argc, char* argv[])
 
   g_main_loop_run(loop);
 
+  //
+  // Shutdown
+  //
   run = false;
-  t1.join();
+
+  camera.stop();
+
+  cameraThread.join();
+
+  detectionThread.join();
+
   g_main_loop_unref(loop);
 
   return 0;
-};
+}
