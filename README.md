@@ -7,7 +7,9 @@ pipeline through `appsrc`. Detection results are generated in a separate
 thread and synchronized with video frames using timestamps. Bounding boxes are
 drawn using `cairooverlay`.
 
-![Result](./Picture1.png)
+Simple Demonstration:
+![Example1](Picture3.png)
+![Example2](Picture4.png)
 
 ## Pipeline
 
@@ -161,6 +163,63 @@ gstreamer-sync
 ├── CMakeLists.txt
 └── README.md
 ```
+
+## Synchronization
+
+The video stream and the detection results are produced independently.
+
+### Video
+
+The `DummyCamera` generates a video frame every 33 ms (30 FPS). Each frame
+receives a Presentation Timestamp (PTS), which is preserved when the frame is
+pushed into the GStreamer pipeline.
+
+Example:
+
+```
+Frame 1 -> PTS = 1000 ms
+Frame 2 -> PTS = 1033 ms
+Frame 3 -> PTS = 1066 ms
+```
+
+### Detection
+
+The detection thread simulates an AI inference process. Every detection also
+receives a timestamp. To imitate processing latency, a small random delay is
+added.
+
+Example:
+
+```
+Detection 1 -> PTS = 1015 ms
+Detection 2 -> PTS = 1062 ms
+Detection 3 -> PTS = 1098 ms
+```
+
+### Matching
+
+Whenever `cairooverlay` draws a video frame, it receives the frame's timestamp.
+The overlay searches all available detections and selects the one whose
+timestamp is closest to the current frame.
+
+Example:
+
+```
+Current frame:      1066 ms
+
+Available detections:
+1015 ms
+1062 ms   <-- selected
+1098 ms
+```
+
+If the smallest timestamp difference is within the configured tolerance
+(currently 200 ms), the corresponding bounding boxes are drawn. Otherwise,
+nothing is rendered for that frame.
+
+This approach keeps the video and detection streams synchronized even when the
+detection process introduces variable processing delays.
+
 
 ## Goal
 
