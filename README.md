@@ -9,7 +9,6 @@ drawn using `cairooverlay`.
 
 Simple Demonstration:
 ![Example1](Picture3.png)
-![Example2](Picture4.png)
 
 ## Pipeline
 
